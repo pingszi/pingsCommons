@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>cn.pings</groupId>
+    <artifactId>pings-commons</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>pings-java-commons</module>
+        <module>pings-shiro-jwt</module>
+    </modules>
+
+    <properties>
+        <java.version>1.8</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- web -->
+        <javaee.version>7.0</javaee.version>
+        <spring.version>5.1.3.RELEASE</spring.version>
+        <spring-data-redis.version>2.1.3.RELEASE</spring-data-redis.version>
+
+        <!-- shiro + jwt -->
+        <shiro-spring.version>1.4.0</shiro-spring.version>
+        <java-jwt.version>3.5.0</java-jwt.version>
+
+        <!-- 其它 -->
+        <commons-lang3.version>3.8.1</commons-lang3.version>
+        <poi.version>3.17</poi.version>
+        <slf4j.version>1.7.25</slf4j.version>
+        <junit.version>4.12</junit.version>
+
+        <!-- pings-commons -->
+        <pings-java-commons.version>0.0.1-SNAPSHOT</pings-java-commons.version>
+        <pings-shiro-jwt.version>0.0.1-SNAPSHOT</pings-shiro-jwt.version>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!--默认关掉单元测试 -->
+                    <skipTests>true</skipTests>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
