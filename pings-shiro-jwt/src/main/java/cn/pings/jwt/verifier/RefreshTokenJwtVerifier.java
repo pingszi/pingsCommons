@@ -22,10 +22,14 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
 
     //**刷新信息过期时间(分钟)，默认60分钟
     protected long refreshTokenExpireTime = 60;
+    //**生成签名后缓存时间(生成签名后在指定时间内不重新生成新的签名，而使用缓存)，默认5S
+    private int tokenSignCacheTime = 5;
     //**redisTemplate，用于存储refresh toke，并实现多个系统之间的共享
     protected RedisTemplate<String, Object> redisTemplate;
     //**缓存中保存refreshToken key的前缀
     private static final String REFRESH_TOKEN_PREFIX = "refresh_token_";
+    //**缓存中保存accessToken key的前缀
+    private static final String ACCESS_TOKEN_PREFIX = "access_token_";
 
     public RefreshTokenJwtVerifier(RedisTemplate<String, Object> redisTemplate) {
         if(redisTemplate == null)
@@ -36,20 +40,31 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
 
     @Override
     public String sign(String userName) {
-        //**refreshToken为当前时间戳
-        long refreshToken = System.currentTimeMillis();
+        //**同步每个用户的签名请求，不同用户不会同步
+        synchronized (userName.intern()){
+            String refreshTokenkey = this.getKey(userName);
+            String accessTokenKey = ACCESS_TOKEN_PREFIX + userName;
 
-        //**获取access token
-        String accessToken = JWT.create()
-                .withClaim(USER_NAME, userName)
-                .withClaim(REFRESH_TOKEN_PREFIX, refreshToken)
-                .withExpiresAt(new Date(refreshToken + accessTokenExpireTime * 60 * 1000))
-                .sign(this.generateAlgorithm(userName));
+            //**refreshToken为当前时间戳
+            long refreshToken = System.currentTimeMillis();
+            //**获取access token
+            String accessToken = JWT.create()
+                    .withClaim(USER_NAME, userName)
+                    .withClaim(REFRESH_TOKEN_PREFIX, refreshToken)
+                    .withExpiresAt(new Date(refreshToken + accessTokenExpireTime * 60 * 1000))
+                    .sign(this.generateAlgorithm(userName));
 
-        //**保存refreshToken
-        this.redisTemplate.opsForValue().set(this.getKey(userName), refreshToken, refreshTokenExpireTime, TimeUnit.MINUTES);
+            //**如果没有有效的accessToken，则缓存新的accessToken
+            Boolean success = this.redisTemplate.opsForValue().setIfAbsent(accessTokenKey, accessToken, tokenSignCacheTime, TimeUnit.SECONDS);
+            //**如果缓存新的accessToken成功，则缓存新的refreshToken
+            if(success != null && success){
+                this.redisTemplate.opsForValue().set(refreshTokenkey, refreshToken, refreshTokenExpireTime, TimeUnit.MINUTES);
+            } else {  //**否则，返回缓存的accessToken
+                accessToken = this.redisTemplate.opsForValue().get(accessTokenKey) + "";
+            }
 
-        return accessToken;
+            return accessToken;
+        }
     }
 
     @Override
@@ -117,6 +132,11 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
 
         public Builder secret(String secret) {
             verifier.secret = secret;
+            return this;
+        }
+
+        public Builder tokenSignCacheTime(int tokenSignCacheTime) {
+            verifier.tokenSignCacheTime = tokenSignCacheTime;
             return this;
         }
 

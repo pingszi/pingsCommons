@@ -1,6 +1,6 @@
 package cn.pings.jwt.exception;
 
-import org.apache.shiro.ShiroException;
+import org.apache.shiro.authc.AuthenticationException;
 
 /**
  *********************************************************
@@ -10,7 +10,7 @@ import org.apache.shiro.ShiroException;
  ** @version v1.0
  * *******************************************************
  */
-public class AccessTokenExpiredException extends ShiroException {
+public class AccessTokenExpiredException extends AuthenticationException {
 
     public AccessTokenExpiredException(String message) {
         super(message);

@@ -57,4 +57,15 @@
         </plugins>
     </build>
 
+    <distributionManagement>
+        <repository>
+            <id>rdc-releases</id>
+            <url>https://repo.rdc.aliyun.com/repository/110912-release-fRBQuB/</url>
+        </repository>
+        <snapshotRepository>
+            <id>rdc-snapshots</id>
+            <url>https://repo.rdc.aliyun.com/repository/110912-snapshot-Avu5gu/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
 </project>

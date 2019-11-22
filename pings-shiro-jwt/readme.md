@@ -63,12 +63,6 @@ public class ShiroConfig {
         return new JwtRealm(this.userService, verifier);
     }
 
-    @Bean
-    @Scope("prototype")
-    public JwtFilter jwtFilter(JwtVerifier verifier){
-        return new JwtFilter(verifier);
-    }
-
     @Bean("securityManager")
     public DefaultWebSecurityManager securityManager(JwtRealm jwtRealm) {
         DefaultWebSecurityManager manager = new DefaultWebSecurityManager();
@@ -85,12 +79,12 @@ public class ShiroConfig {
     }
 
     @Bean("shiroFilter")
-    public ShiroFilterFactoryBean shiroFilterFactoryBean(DefaultWebSecurityManager securityManager, JwtFilter jwtFilter) {
+    public ShiroFilterFactoryBean shiroFilterFactoryBean(DefaultWebSecurityManager securityManager, JwtVerifier verifier) {
         ShiroFilterFactoryBean factoryBean = new ShiroFilterFactoryBean();
 
         //**添加自定义过滤器jwt
         Map<String, Filter> filterMap = new LinkedHashMap<>();
-        filterMap.put("jwt", jwtFilter);
+        filterMap.put("jwt", new JwtFilter(verifier));
         factoryBean.setFilters(filterMap);
 
         factoryBean.setSecurityManager(securityManager);
@@ -132,13 +126,15 @@ public class ShiroConfig {
 # 系统管理 config
 sys:
   jwt:
-    secret: ==SFddfenfV2FuZzkyNjQ1NGRTQkFQSUpXVA==
-     # 访问令牌过期时长(分钟)，默认配置5分钟
-    access-token:
-      expire-time: 3
-    # 刷新令牌过期时长(分钟)，默认配置60分钟
-    refresh-token:
-      expire-time: 5
+      secret: ==SFddfenfV2FuZzkyNjQ1NGRTQkFQSUpXVA==
+       # 访问令牌过期时长(分钟)，默认配置5分钟
+      access-token:
+        expire-time: 5
+        # 生成签名后缓存时间(单位s，生成签名后在指定时间内不重新生成新的签名，而使用缓存)，默认5秒
+        sign-cache-time: 5
+      # 刷新令牌过期时长(分钟)，默认配置60分钟
+      refresh-token:
+        expire-time: 1000
 ```
 - ShiroConfig.java
 ```
@@ -156,6 +152,9 @@ public class ShiroConfig {
     //**访问令牌过期时间(分钟)
     @Value("${sys.jwt.access-token.expire-time}")
     private long accessTokenExpireTime;
+    //**生成签名后缓存时间(单位s，生成签名后在指定时间内不重新生成新的签名，而使用缓存)
+    @Value("${sys.jwt.access-token.sign-cache-time}")
+    private int tokenSignCacheTime;
     //**刷新信息过期时间(分钟)
     @Value("${sys.jwt.refresh-token.expire-time}")
     private long refreshTokenExpireTime;
@@ -171,6 +170,7 @@ public class ShiroConfig {
         return RefreshTokenJwtVerifier.Builder.newBuilder(redisTemplate)
                 .accessTokenExpireTime(accessTokenExpireTime)
                 .refreshTokenExpireTime(refreshTokenExpireTime)
+                .tokenSignCacheTime(tokenSignCacheTime)
                 .secret(secret)
                 .build();
     }
@@ -178,12 +178,6 @@ public class ShiroConfig {
     @Bean
     public JwtRealm jwtRealm(JwtVerifier verifier){
         return new JwtRealm(this.userService, verifier);
-    }
-
-    @Bean
-    @Scope("prototype")
-    public JwtFilter jwtFilter(JwtVerifier verifier){
-        return new JwtFilter(verifier);
     }
 
     @Bean("securityManager")
@@ -202,12 +196,12 @@ public class ShiroConfig {
     }
 
     @Bean("shiroFilter")
-    public ShiroFilterFactoryBean shiroFilterFactoryBean(DefaultWebSecurityManager securityManager, JwtFilter jwtFilter) {
+    public ShiroFilterFactoryBean shiroFilterFactoryBean(DefaultWebSecurityManager securityManager, JwtVerifier verifier) {
         ShiroFilterFactoryBean factoryBean = new ShiroFilterFactoryBean();
 
         //**添加自定义过滤器jwt
         Map<String, Filter> filterMap = new LinkedHashMap<>();
-        filterMap.put("jwt", jwtFilter);
+        filterMap.put("jwt", new JwtFilter(verifier));
         factoryBean.setFilters(filterMap);
 
         factoryBean.setSecurityManager(securityManager);
@@ -323,7 +317,7 @@ public class JwtRealm extends AbstractJwtRealm {
     @PostMapping(value = "/account")
     public ApiResponse account(String userName, String password, HttpServletResponse response){
         if(StringUtils.isBlank(userName) || StringUtils.isBlank(password))
-            throw new UnauthorizedException("用户名/密码不能为空");
+            throw new UnknownAccountException("用户名/密码不能为空");
 
         //**md5加密
         password = DigestUtils.md5DigestAsHex(password.getBytes());
@@ -336,7 +330,7 @@ public class JwtRealm extends AbstractJwtRealm {
             Set<String> rights = user.getRoles().stream().map(Role::getRights).flatMap(List::stream).map(Right::getCode).collect(toSet());
             return new ApiResponse(200, "登录成功", rights);
         } else
-            return new ApiResponse(500, "用户名/密码错误");
+            return new ApiResponse(400, "用户名/密码错误");
     }
 
     /**
@@ -360,3 +354,4 @@ public class JwtRealm extends AbstractJwtRealm {
 ```
 ## 更新记录
 - 2019-05-20 搭建
+- 2019-11-22 修复在accessToken过期时同一个用户的并发请求，同时请求签名，只有最后一个签名生效，其它的签名会失效的问题

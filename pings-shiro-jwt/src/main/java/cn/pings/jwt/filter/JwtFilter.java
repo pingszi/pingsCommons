@@ -39,22 +39,21 @@ public class JwtFilter extends BasicHttpAuthenticationFilter {
             try {
                 //**登录认证
                 return this.executeLogin(request, response);
-            } catch (Exception e) {
+            } catch (AccessTokenExpiredException e) {
                 //**访问令牌过期 and 刷新令牌未过期则重新生成访问令牌
                 try {
-                    if (e.getCause() instanceof AccessTokenExpiredException) {
-                        String userName = verifier.getUserName(this.getAuthzHeader(request));
-                        String token = verifier.sign(userName);
-                        this.executeLogin(token, request, response);
+                    String userName = verifier.getUserName(this.getAuthzHeader(request));
+                    String token = verifier.sign(userName);
+                    this.executeLogin(token, request, response);
 
-                        //**修改响应头的访问令牌
-                        JwtUtil.setHttpServletResponse((HttpServletResponse) response, token);
-                        return true;
-                    }
+                    //**修改响应头的访问令牌
+                    JwtUtil.setHttpServletResponse((HttpServletResponse) response, token);
+                    return true;
                 } catch (Exception ex){
                     ex.printStackTrace();
+                    return false;
                 }
-
+            } catch (Exception e) {
                 e.printStackTrace();
                 this.response401(request, response, e.getMessage());
                 return false;
