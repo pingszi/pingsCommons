@@ -4,11 +4,15 @@ import cn.pings.commons.util.jwt.JwtUtil;
 import cn.pings.jwt.exception.AccessTokenExpiredException;
 import cn.pings.jwt.exception.RefreshTokenExpiredException;
 import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTCreator;
 import com.auth0.jwt.exceptions.TokenExpiredException;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  *********************************************************
@@ -27,7 +31,7 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
     //**redisTemplate，用于存储refresh toke，并实现多个系统之间的共享
     protected RedisTemplate<String, Object> redisTemplate;
     //**缓存中保存refreshToken key的前缀
-    private static final String REFRESH_TOKEN_PREFIX = "refresh_token_";
+    public static final String REFRESH_TOKEN_PREFIX = "refresh_token_";
     //**缓存中保存accessToken key的前缀
     private static final String ACCESS_TOKEN_PREFIX = "access_token_";
 
@@ -40,21 +44,31 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
 
     @Override
     public String sign(String userName) {
-        //**同步每个用户的签名请求，不同用户不会同步
+        return sign(userName, new HashMap<>());
+    }
+
+    @Override
+    public String sign(String userName, Map<String, String> params){
+        return sign(userName, builder -> params.forEach(builder::withClaim));
+    }
+
+    @Override
+    public String sign(String userName, Consumer<JWTCreator.Builder> setClaim) {
+        String refreshTokenkey = this.getKey(userName);
+        String accessTokenKey = ACCESS_TOKEN_PREFIX + userName;
+
+        //**refreshToken为当前时间戳
+        long refreshToken = System.currentTimeMillis();
+        //**获取access token
+        JWTCreator.Builder builder = JWT.create()
+                .withClaim(USER_NAME, userName)
+                .withClaim(REFRESH_TOKEN_PREFIX, refreshToken)
+                .withExpiresAt(new Date(refreshToken + accessTokenExpireTime * 60 * 1000));
+        setClaim.accept(builder);
+        String accessToken = builder.sign(this.generateAlgorithm(userName));
+
+        //**如果没有有效的accessToken，则缓存新的accessToken
         synchronized (userName.intern()){
-            String refreshTokenkey = this.getKey(userName);
-            String accessTokenKey = ACCESS_TOKEN_PREFIX + userName;
-
-            //**refreshToken为当前时间戳
-            long refreshToken = System.currentTimeMillis();
-            //**获取access token
-            String accessToken = JWT.create()
-                    .withClaim(USER_NAME, userName)
-                    .withClaim(REFRESH_TOKEN_PREFIX, refreshToken)
-                    .withExpiresAt(new Date(refreshToken + accessTokenExpireTime * 60 * 1000))
-                    .sign(this.generateAlgorithm(userName));
-
-            //**如果没有有效的accessToken，则缓存新的accessToken
             Boolean success = this.redisTemplate.opsForValue().setIfAbsent(accessTokenKey, accessToken, tokenSignCacheTime, TimeUnit.SECONDS);
             //**如果缓存新的accessToken成功，则缓存新的refreshToken
             if(success != null && success){
@@ -62,9 +76,9 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
             } else {  //**否则，返回缓存的accessToken
                 accessToken = this.redisTemplate.opsForValue().get(accessTokenKey) + "";
             }
-
-            return accessToken;
         }
+
+        return accessToken;
     }
 
     @Override

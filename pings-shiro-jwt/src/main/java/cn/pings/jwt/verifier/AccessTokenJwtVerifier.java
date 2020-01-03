@@ -1,9 +1,13 @@
 package cn.pings.jwt.verifier;
 
 import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTCreator;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  *********************************************************
@@ -31,9 +35,20 @@ public class AccessTokenJwtVerifier extends AbstractJwtVerifier {
 
     @Override
     public String sign(String userName) {
-        return JWT.create()
-                .withClaim(USER_NAME, userName)
-                .withExpiresAt(new Date(System.currentTimeMillis() + accessTokenExpireTime * 60 * 1000))
-                .sign(this.generateAlgorithm(userName));
+        return sign(userName, new HashMap<>());
     }
+
+    @Override
+    public String sign(String userName, Map<String, String> params){
+        return sign(userName, builder -> params.forEach(builder::withClaim));
+    }
+
+    @Override
+    public String sign(String userName, Consumer<JWTCreator.Builder> setClaim){
+        JWTCreator.Builder builder = JWT.create().withClaim(USER_NAME, userName).withExpiresAt(new Date(System.currentTimeMillis() + accessTokenExpireTime * 60 * 1000));
+        setClaim.accept(builder);
+
+        return builder.sign(this.generateAlgorithm(userName));
+    }
+
 }

@@ -42,8 +42,7 @@ public class JwtFilter extends BasicHttpAuthenticationFilter {
             } catch (AccessTokenExpiredException e) {
                 //**访问令牌过期 and 刷新令牌未过期则重新生成访问令牌
                 try {
-                    String userName = verifier.getUserName(this.getAuthzHeader(request));
-                    String token = verifier.sign(userName);
+                    String token  = verifier.signByOldToken(this.getAuthzHeader(request));
                     this.executeLogin(token, request, response);
 
                     //**修改响应头的访问令牌

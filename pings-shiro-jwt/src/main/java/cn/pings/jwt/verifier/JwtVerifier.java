@@ -2,8 +2,22 @@ package cn.pings.jwt.verifier;
 
 import cn.pings.commons.util.jwt.JwtUtil;
 import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTCreator;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.impl.PublicClaims;
+import com.auth0.jwt.interfaces.Claim;
+import com.auth0.jwt.interfaces.Payload;
+
+import java.sql.Array;
+import java.util.AbstractMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
+
+import static cn.pings.jwt.verifier.RefreshTokenJwtVerifier.REFRESH_TOKEN_PREFIX;
+import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
 
 /**
  *********************************************************
@@ -28,6 +42,30 @@ public interface JwtVerifier {
      * *******************************************************
      */
     String sign(String userName);
+
+    /**
+     *********************************************************
+     ** @desc ： 生成令牌
+     ** @author Pings
+     ** @date   2019/12/31
+     ** @param  userName    用户名
+     ** @param  params      其它参数
+     ** @return String
+     * *******************************************************
+     */
+    String sign(String userName, Map<String, String> params);
+
+    /**
+     *********************************************************
+     ** @desc ： 生成令牌
+     ** @author Pings
+     ** @date   2019/12/31
+     ** @param  userName    用户名
+     ** @param  setClaim    函数，设置参数
+     ** @return String
+     * *******************************************************
+     */
+    String sign(String userName, Consumer<JWTCreator.Builder> setClaim);
 
     /**
      *********************************************************
@@ -92,6 +130,32 @@ public interface JwtVerifier {
      */
     default String getUserName(String token) {
         return JwtUtil.getValue(token, USER_NAME).asString();
+    }
+
+    /**
+     *********************************************************
+     ** @desc ：根据旧token生成新签名
+     ** @author Pings
+     ** @date   2020/01/02
+     ** @param  token  令牌
+     ** @return String
+     * *******************************************************
+     */
+    default String signByOldToken(String token){
+        Map<String, Claim> params = JwtUtil.decodeToken(token, Payload::getClaims);
+
+        if(params != null){
+            Map<String, String> paramMap = params.entrySet().stream()
+                .filter(entry -> !entry.getKey().equals(USER_NAME))
+                .filter(entry -> !entry.getKey().equals(PublicClaims.EXPIRES_AT))
+                .filter(entry -> !entry.getKey().equals(REFRESH_TOKEN_PREFIX))
+                .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue().asString()))
+                .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+            return this.sign(params.get(USER_NAME).asString(), paramMap);
+        } else {
+            return this.sign(this.getUserName(token));
+        }
     }
 
 }
