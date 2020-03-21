@@ -5,9 +5,7 @@ import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.List;
@@ -22,7 +20,7 @@ import static java.util.stream.Collectors.*;
  ** @desc  ： excel导入/导出工具类
  ** @author  Pings
  ** @date    2017/12/25
- ** @version v1.0
+ ** @version v1.1
  * *******************************************************
  */
 public class ExcelUtil {
@@ -149,10 +147,13 @@ public class ExcelUtil {
      ** @date   2017/12/26
      ** @param  dataList  写入excel表的数据
      ** @param  out       输出流
+     *
+     ** @desc ： v1.1   创建多个sheet不能使用并行流
+     ** @date   2020/03/21
      * *******************************************************
      */
     public static void createExcel(List<List<Object[]>> dataList, OutputStream out) {
-        create(out, workbook -> dataList.parallelStream().forEach(newDataList -> writeSheet(workbook.createSheet(), newDataList)));
+        create(out, workbook -> dataList.forEach(newDataList -> writeSheet(workbook.createSheet(), newDataList)));
     }
 
     /**
@@ -168,7 +169,7 @@ public class ExcelUtil {
         //**计数器
         final List<Integer> index = Arrays.asList(-1, -1);
 
-        dataList.stream().forEach(dataArray -> {
+        dataList.forEach(dataArray -> {
             index.set(0, index.get(0) + 1);   //**行计数器
             Row row = sheet.createRow(index.get(0));
 
@@ -211,4 +212,24 @@ public class ExcelUtil {
         obj = obj ==  null ? "" : obj;
         cell.setCellValue(obj.toString());
     }
+
+//    public static void main(String[] args) throws FileNotFoundException {
+//        List<List<Object[]>> s = new ArrayList<>();
+//
+//        List<Object[]> ss =new ArrayList<>();
+//        ss.add(new Object[]{"111", "222", "333"});
+//        ss.add(new Object[]{"111", "222", "333"});
+//        ss.add(new Object[]{"111", "222", "333"});
+//        ss.add(new Object[]{"111", "222", "333"});
+//        s.add(ss);
+//
+//        List<Object[]> ss1 =new ArrayList<>();
+//        ss1.add(new Object[]{"111", "222", "333"});
+//        ss1.add(new Object[]{"111", "222", "333"});
+//        ss1.add(new Object[]{"111", "222", "333"});
+//        ss1.add(new Object[]{"111", "222", "333"});
+//        s.add(ss1);
+//
+//        createExcel(s, new FileOutputStream("f:\\test.xlsx"));
+//    }
 }
