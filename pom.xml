@@ -32,8 +32,8 @@
         <junit.version>4.12</junit.version>
 
         <!-- pings-commons -->
-        <pings-java-commons.version>0.0.1-SNAPSHOT</pings-java-commons.version>
-        <pings-shiro-jwt.version>0.0.1-SNAPSHOT</pings-shiro-jwt.version>
+        <pings-java-commons.version>1.1-SNAPSHOT</pings-java-commons.version>
+        <pings-shiro-jwt.version>1.0-SNAPSHOT</pings-shiro-jwt.version>
     </properties>
 
     <build>
