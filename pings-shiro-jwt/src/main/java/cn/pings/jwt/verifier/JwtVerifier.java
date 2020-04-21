@@ -9,14 +9,11 @@ import com.auth0.jwt.impl.PublicClaims;
 import com.auth0.jwt.interfaces.Claim;
 import com.auth0.jwt.interfaces.Payload;
 
-import java.sql.Array;
 import java.util.AbstractMap;
-import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
 import static cn.pings.jwt.verifier.RefreshTokenJwtVerifier.REFRESH_TOKEN_PREFIX;
-import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
 /**
