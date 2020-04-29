@@ -6,6 +6,8 @@ import cn.pings.jwt.exception.RefreshTokenExpiredException;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTCreator;
 import com.auth0.jwt.exceptions.TokenExpiredException;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.util.Assert;
 
@@ -36,10 +38,15 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
     //**缓存中保存accessToken key的前缀
     private static final String ACCESS_TOKEN_PREFIX = "jwt_access_token_";
 
-    public RefreshTokenJwtVerifier(RedisTemplate<String, Object> redisTemplate) {
+    //**redisson客户端，实现分布式锁
+    private RedissonClient redissonClient;
+
+    public RefreshTokenJwtVerifier(RedisTemplate<String, Object> redisTemplate, RedissonClient redissonClient) {
         Assert.notNull(redisTemplate, "redisTemplate cat not be null");
+        Assert.notNull(redissonClient, "redissonClient cat not be null");
 
         this.redisTemplate = redisTemplate;
+        this.redissonClient = redissonClient;
     }
 
     @Override
@@ -68,17 +75,23 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         String accessToken = builder.sign(this.generateAlgorithm(userName));
 
         //**如果没有有效的accessToken，则缓存新的accessToken
-        Boolean success = this.redisTemplate.opsForValue().setIfAbsent(accessTokenKey, accessToken, tokenSignCacheTime, TimeUnit.SECONDS);
+        RLock lock = redissonClient.getLock("jwt_access_lock_" + userName);
+        boolean res = false;
         try {
-            TimeUnit.SECONDS.sleep(1);
-        } catch (InterruptedException e) {
-            throw new RefreshTokenExpiredException("The refresh token has expired.");
-        }
-        //**如果缓存新的accessToken成功，则缓存新的refreshToken
-        if (success != null && success) {
-            this.redisTemplate.opsForValue().set(refreshTokenKey, refreshToken, refreshTokenExpireTime, TimeUnit.MINUTES);
-        } else {  //**否则，返回缓存的accessToken
-            accessToken = this.redisTemplate.opsForValue().get(accessTokenKey) + "";
+            res = lock.tryLock(10, 5, TimeUnit.SECONDS);
+            if (res) {
+                Boolean success = this.redisTemplate.opsForValue().setIfAbsent(accessTokenKey, accessToken, tokenSignCacheTime, TimeUnit.SECONDS);
+                //**如果缓存新的accessToken成功，则缓存新的refreshToken
+                if (success != null && success) {
+                    this.redisTemplate.opsForValue().set(refreshTokenKey, refreshToken, refreshTokenExpireTime, TimeUnit.MINUTES);
+                } else {  //**否则，返回缓存的accessToken
+                    accessToken = this.redisTemplate.opsForValue().get(accessTokenKey) + "";
+                }
+            }
+        } catch (Exception e) {
+            throw new RefreshTokenExpiredException("The refresh token may have expired.");
+        } finally {
+            if (res) lock.unlock();
         }
 
         return accessToken;
@@ -132,9 +145,9 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         private Builder() {
         }
 
-        public static Builder newBuilder(RedisTemplate<String, Object> redisTemplate) {
+        public static Builder newBuilder(RedisTemplate<String, Object> redisTemplate, RedissonClient redissonClient) {
             Builder builder = new Builder();
-            builder.verifier = new RefreshTokenJwtVerifier(redisTemplate);
+            builder.verifier = new RefreshTokenJwtVerifier(redisTemplate, redissonClient);
             return builder;
         }
 
