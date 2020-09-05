@@ -14,7 +14,7 @@
     - [原理](https://blog.csdn.net/zhouping118/article/details/89355282)
     - 优点
         - 安全性好，可以像session一样管理用户
-        -  如果多个系统之间用户信息和配置的secret相同，某个系统签发的token即可访问所有其它的任意系统
+        - 分布式系统鉴权，如果多个系统之间用户信息和配置的secret相同，某个系统签发的token即可访问所有其它的任意系统
     - 问题
         - 依赖redis存储refresh token，实现多个系统之间的refresh token共享
 ### [示例：dubbo微服务脚手架](https://github.com/pingszi/pingsSys/tree/master/pings-web-admin/)
@@ -130,8 +130,8 @@ sys:
        # 访问令牌过期时长(分钟)，默认配置5分钟
       access-token:
         expire-time: 5
-        # 生成签名后缓存时间(单位s，生成签名后在指定时间内不重新生成新的签名，而使用缓存)，默认5秒
-        sign-cache-time: 5
+        # 生成签名后缓存时间(单位s，生成签名后在指定时间内不重新生成新的签名，而使用缓存)，默认10秒
+        sign-cache-time: 8
       # 刷新令牌过期时长(分钟)，默认配置60分钟
       refresh-token:
         expire-time: 1000
@@ -355,3 +355,4 @@ public class JwtRealm extends AbstractJwtRealm {
 ## 更新记录
 - 2019-05-20 搭建
 - 2019-11-22 修复在accessToken过期时同一个用户的并发请求，同时请求签名，只有最后一个签名生效，其它的签名会失效的问题
+- 2020-09-05 修复同一个用户并发请求的问题

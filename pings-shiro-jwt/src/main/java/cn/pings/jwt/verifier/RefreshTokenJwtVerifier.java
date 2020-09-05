@@ -29,11 +29,13 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
     //**刷新令牌过期时间(分钟)，默认60分钟
     protected long refreshTokenExpireTime = 60;
     //**刷新令牌过期延迟时间(刷新令牌过期，但是过期时间小于延迟时间，则尝试重新登录)，默认10S
-    private int tokenSignCacheTime = 50;
+    private int tokenSignCacheTime = 10;
     //**redisTemplate，用于存储refresh toke，并实现多个系统之间的共享
     protected RedisTemplate<String, Object> redisTemplate;
     //**缓存中保存refreshToken key的前缀
     public static final String REFRESH_TOKEN_PREFIX = "jwt_refresh_token_";
+    //**缓存中保存accessToken key的前缀
+    private static final String ACCESS_TOKEN_PREFIX = "jwt_access_token_";
 
     public RefreshTokenJwtVerifier(RedisTemplate<String, Object> redisTemplate) {
         Assert.notNull(redisTemplate, "redisTemplate cat not be null");
@@ -74,8 +76,9 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
             logger.debug("Cache tokenMd5={}", tokenMd5);
             this.redisTemplate.opsForValue().set(tokenMd5, null, tokenSignCacheTime, TimeUnit.SECONDS);
         }
-        this.setNewRefreshToken(refreshTokenKey, refreshToken, accessToken);
-        return accessToken;
+
+        //**如果缓存新的访问令牌成功，则缓存新的刷新令牌，返回缓存的访问令牌
+        return this.getNewAccessToken(ACCESS_TOKEN_PREFIX + userName, accessToken, refreshTokenKey, refreshToken);
     }
 
     @Override
@@ -91,13 +94,8 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         long refreshToken = (long) this.redisTemplate.opsForValue().get(key);
         long currentRefreshToken = this.getRefreshToken(token);
         if(refreshToken != currentRefreshToken) {
-            logger.warn("tokenMd5 = {}", DigestUtils.md5DigestAsHex(token.getBytes()));
-            logger.warn("token = {}", token);
             Boolean flag = this.redisTemplate.hasKey(DigestUtils.md5DigestAsHex(token.getBytes()));
-            if(flag != null && flag) {
-                logger.warn("pings-true");
-                return true;
-            }
+            if(flag != null && flag)  return true;
 
             throw new RefreshTokenExpiredException("The refresh token has expired.");
         }
@@ -110,17 +108,20 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         }
     }
 
-    //**设置最新的刷新令牌
-    private void setNewRefreshToken(String refreshTokenKey, long refreshToken, String accessToken){
-        String script = "local value = redis.call('get', KEYS[1]) " +
-                        "if not value or value < ARGV[1] then " +
-                        "    redis.call('set', KEYS[1], ARGV[1]) " +
+    //**如果缓存新的访问令牌成功，则缓存新的刷新令牌，返回缓存的访问令牌
+    private String getNewAccessToken(String accessTokenKey, String accessToken, String refreshTokenKey, long refreshToken){
+        String script = "if 1 == redis.call('setnx', KEYS[1], ARGV[1]) then " +
                         "    redis.call('expire', KEYS[1], ARGV[2]) " +
-                        "end " +
-                        "redis.call('set', KEYS[2], ARGV[3]) " +
-                        "redis.call('expire', KEYS[2], ARGV[4])";
-        String tokenMd5 = DigestUtils.md5DigestAsHex(accessToken.getBytes());
-        redisTemplate.<Boolean>execute(new DefaultRedisScript<>(script), Arrays.asList(refreshTokenKey, tokenMd5), refreshToken, refreshTokenExpireTime * 60, null, tokenSignCacheTime);
+                        "    redis.call('set', KEYS[2], ARGV[3]) " +
+                        "    redis.call('expire', KEYS[2], ARGV[4]) " +
+                        "    return ARGV[1] " +
+                        "else " +
+                        "    return redis.call('get', KEYS[1]) " +
+                        "end";
+        DefaultRedisScript<String> sc = new DefaultRedisScript<>(script);
+        sc.setResultType(String.class);
+
+        return redisTemplate.execute(sc, Arrays.asList(accessTokenKey, refreshTokenKey), accessToken, tokenSignCacheTime, refreshToken, refreshTokenExpireTime * 60);
     }
 
     /**刷新令牌：通过删除缓存中的刷新令牌使token无效*/
