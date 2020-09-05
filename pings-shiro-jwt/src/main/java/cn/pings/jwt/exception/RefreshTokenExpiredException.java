@@ -4,7 +4,7 @@ import org.apache.shiro.authc.AuthenticationException;
 
 /**
  *********************************************************
- ** @desc  ： refresh token未过期
+ ** @desc  ： refresh token过期
  ** @author  Pings
  ** @date    2019/5/21
  ** @version v1.0

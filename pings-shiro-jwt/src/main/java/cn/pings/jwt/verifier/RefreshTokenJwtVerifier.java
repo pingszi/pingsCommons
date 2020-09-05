@@ -6,14 +6,13 @@ import cn.pings.jwt.exception.RefreshTokenExpiredException;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTCreator;
 import com.auth0.jwt.exceptions.TokenExpiredException;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.util.Assert;
+import org.springframework.util.DigestUtils;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -27,26 +26,19 @@ import java.util.function.Consumer;
  */
 public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
 
-    //**刷新信息过期时间(分钟)，默认60分钟
+    //**刷新令牌过期时间(分钟)，默认60分钟
     protected long refreshTokenExpireTime = 60;
-    //**生成签名后缓存时间(生成签名后在指定时间内不重新生成新的签名，而使用缓存)，默认5S
-    private int tokenSignCacheTime = 5;
+    //**刷新令牌过期延迟时间(刷新令牌过期，但是过期时间小于延迟时间，则尝试重新登录)，默认10S
+    private int tokenSignCacheTime = 50;
     //**redisTemplate，用于存储refresh toke，并实现多个系统之间的共享
     protected RedisTemplate<String, Object> redisTemplate;
     //**缓存中保存refreshToken key的前缀
     public static final String REFRESH_TOKEN_PREFIX = "jwt_refresh_token_";
-    //**缓存中保存accessToken key的前缀
-    private static final String ACCESS_TOKEN_PREFIX = "jwt_access_token_";
 
-    //**redisson客户端，实现分布式锁
-    private RedissonClient redissonClient;
-
-    public RefreshTokenJwtVerifier(RedisTemplate<String, Object> redisTemplate, RedissonClient redissonClient) {
+    public RefreshTokenJwtVerifier(RedisTemplate<String, Object> redisTemplate) {
         Assert.notNull(redisTemplate, "redisTemplate cat not be null");
-        Assert.notNull(redissonClient, "redissonClient cat not be null");
 
         this.redisTemplate = redisTemplate;
-        this.redissonClient = redissonClient;
     }
 
     @Override
@@ -61,8 +53,12 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
 
     @Override
     public String sign(String userName, Consumer<JWTCreator.Builder> setClaim) {
+        return sign(userName, setClaim, null);
+    }
+
+    @Override
+    public String sign(String userName, Consumer<JWTCreator.Builder> setClaim, String tokenMd5) {
         String refreshTokenKey = this.getKey(userName);
-        String accessTokenKey = ACCESS_TOKEN_PREFIX + userName;
 
         //**refreshToken为当前时间戳
         long refreshToken = System.currentTimeMillis();
@@ -74,26 +70,11 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         setClaim.accept(builder);
         String accessToken = builder.sign(this.generateAlgorithm(userName));
 
-        //**如果没有有效的accessToken，则缓存新的accessToken
-        RLock lock = redissonClient.getLock("jwt_access_lock_" + userName);
-        boolean res = false;
-        try {
-            res = lock.tryLock(10, 5, TimeUnit.SECONDS);
-            if (res) {
-                Boolean success = this.redisTemplate.opsForValue().setIfAbsent(accessTokenKey, accessToken, tokenSignCacheTime, TimeUnit.SECONDS);
-                //**如果缓存新的accessToken成功，则缓存新的refreshToken
-                if (success != null && success) {
-                    this.redisTemplate.opsForValue().set(refreshTokenKey, refreshToken, refreshTokenExpireTime, TimeUnit.MINUTES);
-                } else {  //**否则，返回缓存的accessToken
-                    accessToken = this.redisTemplate.opsForValue().get(accessTokenKey) + "";
-                }
-            }
-        } catch (Exception e) {
-            throw new RefreshTokenExpiredException("The refresh token may have expired.");
-        } finally {
-            if (res) lock.unlock();
+        if(StringUtils.isNotBlank(tokenMd5)) {
+            logger.debug("Cache tokenMd5={}", tokenMd5);
+            this.redisTemplate.opsForValue().set(tokenMd5, null, tokenSignCacheTime, TimeUnit.SECONDS);
         }
-
+        this.setNewRefreshToken(refreshTokenKey, refreshToken, accessToken);
         return accessToken;
     }
 
@@ -109,7 +90,15 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         //**刷新令牌和访问令牌的时间戳不一致
         long refreshToken = (long) this.redisTemplate.opsForValue().get(key);
         long currentRefreshToken = this.getRefreshToken(token);
-        if (refreshToken != currentRefreshToken) {
+        if(refreshToken != currentRefreshToken) {
+            logger.warn("tokenMd5 = {}", DigestUtils.md5DigestAsHex(token.getBytes()));
+            logger.warn("token = {}", token);
+            Boolean flag = this.redisTemplate.hasKey(DigestUtils.md5DigestAsHex(token.getBytes()));
+            if(flag != null && flag) {
+                logger.warn("pings-true");
+                return true;
+            }
+
             throw new RefreshTokenExpiredException("The refresh token has expired.");
         }
 
@@ -119,6 +108,19 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         } catch (TokenExpiredException e){
             throw new AccessTokenExpiredException("The access token has expired.");
         }
+    }
+
+    //**设置最新的刷新令牌
+    private void setNewRefreshToken(String refreshTokenKey, long refreshToken, String accessToken){
+        String script = "local value = redis.call('get', KEYS[1]) " +
+                        "if not value or value < ARGV[1] then " +
+                        "    redis.call('set', KEYS[1], ARGV[1]) " +
+                        "    redis.call('expire', KEYS[1], ARGV[2]) " +
+                        "end " +
+                        "redis.call('set', KEYS[2], ARGV[3]) " +
+                        "redis.call('expire', KEYS[2], ARGV[4])";
+        String tokenMd5 = DigestUtils.md5DigestAsHex(accessToken.getBytes());
+        redisTemplate.<Boolean>execute(new DefaultRedisScript<>(script), Arrays.asList(refreshTokenKey, tokenMd5), refreshToken, refreshTokenExpireTime * 60, null, tokenSignCacheTime);
     }
 
     /**刷新令牌：通过删除缓存中的刷新令牌使token无效*/
@@ -145,9 +147,9 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         private Builder() {
         }
 
-        public static Builder newBuilder(RedisTemplate<String, Object> redisTemplate, RedissonClient redissonClient) {
+        public static Builder newBuilder(RedisTemplate<String, Object> redisTemplate) {
             Builder builder = new Builder();
-            builder.verifier = new RefreshTokenJwtVerifier(redisTemplate, redissonClient);
+            builder.verifier = new RefreshTokenJwtVerifier(redisTemplate);
             return builder;
         }
 
