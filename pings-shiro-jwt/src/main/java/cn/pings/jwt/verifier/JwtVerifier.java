@@ -8,6 +8,7 @@ import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.impl.PublicClaims;
 import com.auth0.jwt.interfaces.Claim;
 import com.auth0.jwt.interfaces.Payload;
+import org.springframework.util.DigestUtils;
 
 import java.util.AbstractMap;
 import java.util.Map;
@@ -63,6 +64,21 @@ public interface JwtVerifier {
      * *******************************************************
      */
     String sign(String userName, Consumer<JWTCreator.Builder> setClaim);
+
+    /**
+     *********************************************************
+     ** @desc ： 生成令牌
+     ** @author Pings
+     ** @date   2020/9/3
+     ** @param  userName    用户名
+     ** @param  setClaim    函数，设置参数
+     ** @param  tokenMd5   md5加密后的访问令牌
+     ** @return String
+     * *******************************************************
+     */
+    default String sign(String userName, Consumer<JWTCreator.Builder> setClaim, String tokenMd5){
+        throw new RuntimeException("This method is not supported");
+    }
 
     /**
      *********************************************************
@@ -140,19 +156,15 @@ public interface JwtVerifier {
      */
     default String signByOldToken(String token){
         Map<String, Claim> params = JwtUtil.decodeToken(token, Payload::getClaims);
+        assert params != null;
 
-        if(params != null){
-            Map<String, String> paramMap = params.entrySet().stream()
-                .filter(entry -> !entry.getKey().equals(USER_NAME))
-                .filter(entry -> !entry.getKey().equals(PublicClaims.EXPIRES_AT))
-                .filter(entry -> !entry.getKey().equals(REFRESH_TOKEN_PREFIX))
-                .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue().asString()))
-                .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, String> paramMap = params.entrySet().stream()
+            .filter(entry -> !entry.getKey().equals(USER_NAME))
+            .filter(entry -> !entry.getKey().equals(PublicClaims.EXPIRES_AT))
+            .filter(entry -> !entry.getKey().equals(REFRESH_TOKEN_PREFIX))
+            .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue().asString()))
+            .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
 
-            return this.sign(params.get(USER_NAME).asString(), paramMap);
-        } else {
-            return this.sign(this.getUserName(token));
-        }
+        return this.sign(params.get(USER_NAME).asString(), builder -> paramMap.forEach(builder::withClaim), DigestUtils.md5DigestAsHex(token.getBytes()));
     }
-
 }

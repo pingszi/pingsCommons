@@ -1,5 +1,8 @@
 package cn.pings.jwt.verifier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  *********************************************************
  ** @desc  ： Jwt校验器
@@ -9,6 +12,8 @@ package cn.pings.jwt.verifier;
  * *******************************************************
  */
 public abstract class AbstractJwtVerifier implements JwtVerifier {
+
+    protected Logger logger = LoggerFactory.getLogger(this.getClass());
 
     //**访问令牌过期时间(分钟)，默认5分钟
     protected long accessTokenExpireTime = 5;
