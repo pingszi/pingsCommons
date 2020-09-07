@@ -6,7 +6,6 @@ import cn.pings.jwt.exception.RefreshTokenExpiredException;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTCreator;
 import com.auth0.jwt.exceptions.TokenExpiredException;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.util.Assert;
@@ -55,11 +54,6 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
 
     @Override
     public String sign(String userName, Consumer<JWTCreator.Builder> setClaim) {
-        return sign(userName, setClaim, null);
-    }
-
-    @Override
-    public String sign(String userName, Consumer<JWTCreator.Builder> setClaim, String tokenMd5) {
         String refreshTokenKey = this.getKey(userName);
 
         //**refreshToken为当前时间戳
@@ -72,11 +66,6 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         setClaim.accept(builder);
         String accessToken = builder.sign(this.generateAlgorithm(userName));
 
-        if(StringUtils.isNotBlank(tokenMd5)) {
-            logger.debug("Cache tokenMd5={}", tokenMd5);
-            this.redisTemplate.opsForValue().set(tokenMd5, null, tokenSignCacheTime, TimeUnit.SECONDS);
-        }
-
         //**如果缓存新的访问令牌成功，则缓存新的刷新令牌，返回缓存的访问令牌
         return this.getNewAccessToken(ACCESS_TOKEN_PREFIX + userName, accessToken, refreshTokenKey, refreshToken);
     }
@@ -84,6 +73,7 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
     @Override
     public boolean verify(String token) {
         String key = this.getKey(this.getUserName(token));
+        String tokenMd5 = DigestUtils.md5DigestAsHex(token.getBytes());
 
         //**刷新令牌不存在/过期
         Boolean hasKey = this.redisTemplate.hasKey(key);
@@ -94,7 +84,7 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         long refreshToken = (long) this.redisTemplate.opsForValue().get(key);
         long currentRefreshToken = this.getRefreshToken(token);
         if(refreshToken != currentRefreshToken) {
-            Boolean flag = this.redisTemplate.hasKey(DigestUtils.md5DigestAsHex(token.getBytes()));
+            Boolean flag = this.redisTemplate.hasKey(tokenMd5);
             if(flag != null && flag)  return true;
 
             throw new RefreshTokenExpiredException("The refresh token has expired.");
@@ -104,6 +94,9 @@ public class RefreshTokenJwtVerifier extends AbstractJwtVerifier {
         try {
             return super.verify(token);
         } catch (TokenExpiredException e){
+            logger.debug("Cache tokenMd5={}", tokenMd5);
+            this.redisTemplate.opsForValue().set(tokenMd5, null, tokenSignCacheTime, TimeUnit.SECONDS);
+
             throw new AccessTokenExpiredException("The access token has expired.");
         }
     }
