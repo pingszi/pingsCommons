@@ -5,6 +5,7 @@ import cn.pings.jwt.JwtToken;
 import cn.pings.jwt.exception.AccessTokenExpiredException;
 import cn.pings.jwt.verifier.JwtVerifier;
 import org.apache.shiro.web.filter.authc.BasicHttpAuthenticationFilter;
+import org.apache.shiro.web.util.WebUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.RequestMethod;
 
@@ -124,6 +125,14 @@ public class JwtFilter extends BasicHttpAuthenticationFilter {
         this.getSubject(request, response).login(jwtToken);
         //**没有抛出异常则代表登入成功
         return true;
+    }
+
+    /**获取权限编码*/
+    protected String getAuthzHeader(ServletRequest request) {
+        HttpServletRequest httpRequest = WebUtils.toHttp(request);
+        String token =  httpRequest.getHeader("Authorization");
+
+        return token != null ? token : request.getParameter("Authorization");
     }
 
 }
